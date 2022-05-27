@@ -27,25 +27,9 @@ namespace dvr
 
     struct PRD
     {
-        float sumWeightedValues;
-        float sumWeights;
+        float tHit;
+        int primID;
     };
-
-    inline __device__
-    vec4f sampleVolume(const vec3f &pos,
-                       vec3f &gradient)
-    {
-        auto &lp = optixLaunchParams;
-        PRD prd = { 0.f, 0.f };
-        owl::Ray ray(pos,
-                     vec3f(1.f),
-                     0.f,
-                     2e-10f);
-        owl::traceRay(lp.world,ray,prd,
-                      OPTIX_RAY_FLAG_DISABLE_ANYHIT);
-        float val = prd.sumWeights > 0.f ? prd.sumWeightedValues/prd.sumWeights : 0.f;
-        return {0.f,0.f,1.f,val};
-    }
 
     inline __device__
     bool intersect(const Ray &ray,
@@ -76,37 +60,6 @@ namespace dvr
         return t;
     }
 
-    inline __device__
-    vec4f integrateRay(const Ray &ray,
-                       const float ils_t0,
-                       float &z)
-    {
-        auto &lp = optixLaunchParams;
-        const box3f bounds = lp.domain;//{ vec3f(.5f), vec3f(lp.volume.dims)-vec3f(.5f) };
-        float t0, t1;
-        vec3f color = 0.f;
-        float alpha = 0.f;
-        if (!intersect(ray,bounds,t0,t1)) {
-            z = 1e10f;
-            return vec4f(0.f);
-        }
-
-        const float dt = lp.render.dt;
-        for (float t = firstSampleT({t0,t1},dt,ils_t0); t < t1 && alpha < .99f; t += dt) {
-            vec3f gradient;
-            vec4f sample = sampleVolume(ray.origin+t*ray.direction,gradient);
-            sample.w *= 1.f;
-            //color += dt * (1.f-alpha) * sample.w * vec3f(sample)
-            //    * (.1f+.9f*fabsf(dot(gradient,ray.direction)));
-            color += dt * (1.f-alpha) * sample.w * vec3f(sample);
-                //* (.1f+.9f*fabsf(dot(gradient,ray.direction)));
-            alpha += dt * (1.f-alpha)*sample.w;
-        }
-
-        z = t0;
-        return vec4f(color,alpha);
-    }
-
     inline  __device__ Ray generateRay(const vec2f screen)
     {
         auto &lp = optixLaunchParams;
@@ -131,8 +84,6 @@ namespace dvr
         float radius = self.radius;
         vec3f min(particle-radius);
         vec3f max(particle+radius);
-        //if (primID == 23)
-        //    printf("(%f %f %f) (%f %f %f)\n",min.x,min.y,min.z,max.x,max.y,max.z);
         primBounds
             = box3f()
             .including(min)
@@ -144,22 +95,49 @@ namespace dvr
         const ParticleGeom& self = owl::getProgramData<ParticleGeom>();
         PRD &prd = owl::getPRD<PRD>();
 
-        vec3f pos = optixGetObjectRayOrigin();
-        unsigned primID = optixGetPrimitiveIndex();
-        vec3f particlePos = self.particles[primID];
-        float radius = self.radius;
-        if (length(particlePos-pos) <= radius && optixReportIntersection(optixGetRayTmax(),0))
-        {
-            auto& lp = optixLaunchParams;
-            const vec2i threadIdx = owl::getLaunchIndex();
-            int pixelID = threadIdx.x + owl::getLaunchDims().x*threadIdx.y;
-            Random random(pixelID,lp.accumID);
+        int primID = optixGetPrimitiveIndex();
+        owl::Ray ray(optixGetObjectRayOrigin(),
+                     optixGetObjectRayDirection(),
+                     optixGetRayTmin(),
+                     optixGetRayTmax());
+#if 1
+        struct {
+          vec3f center;
+          float radius;
+        } sphere;
 
-            float val = random();
-            float weight = 1.f-(length(particlePos-pos)/radius);
-            prd.sumWeightedValues += val*weight;
-            prd.sumWeights += weight;
+        sphere.center = self.particles[primID];
+        sphere.radius = self.radius;
+
+        vec3f ori = ray.origin - sphere.center;
+        ray.origin = ori;
+
+        float A = dot(ray.direction, ray.direction);
+        float B = dot(ray.direction, ray.origin) * 2.f;
+        float C = dot(ray.origin, ray.origin) - sphere.radius * sphere.radius;
+
+        // solve Ax**2 + Bx + C
+        float disc = B * B - 4.f * A * C;
+        float valid = disc >= 0.f;
+
+        float root_disc = valid ? sqrtf(disc) : disc;
+
+        float q = B<0.f ? -.5f * (B-root_disc) : -.5f * (B+root_disc);
+
+        float t1 = q / A;
+        float t2 = C / q;
+
+        bool hit = valid && (t1>=0.f || t2 >=0.f);
+        float tHit = -1.f;
+        tHit = t1 >= 0.f && t2 >= 0.f ? min(t1, t2) : tHit;
+        tHit = t1 >= 0.f && t2 <  0.f ? t1          : tHit;
+        tHit = t1 <  0.f && t2 >= 0.f ? t2          : tHit;
+
+        if (hit && optixReportIntersection(tHit, 0)) {
+            prd.tHit = tHit;
+            prd.primID = primID;
         }
+#endif
     }
 
     OPTIX_CLOSEST_HIT_PROGRAM(Particles)()
@@ -219,11 +197,15 @@ namespace dvr
         float z = 1e20f;
         for (int sampleID=0;sampleID<spp;sampleID++) {
             vec4f color = 0.f;
-            PRD prd = { (unsigned)-1 };
+            PRD prd = {-1.f,-1};
             owl::traceRay(lp.world,ray,prd,
                           OPTIX_RAY_FLAG_DISABLE_ANYHIT);
-            const float ils_t0 = random();
-            color = integrateRay(ray,ils_t0,z);
+            if (prd.primID >= 0) {
+                vec3f baseColor(0.f,0.f,.8f);
+                vec3f isectPos = ray.origin + prd.tHit*ray.direction;
+                vec3f N = (isectPos - lp.particles[prd.primID]) / lp.radius;
+                color = vec4f(N,1.f);
+            }
             color = over(color,bgColor);
             accumColor += color;
         }

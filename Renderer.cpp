@@ -81,8 +81,8 @@ namespace dvr {
     std::default_random_engine rd;
     std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
 
-    float radius = .312f;
-    particles.resize(50);
+    float radius = .001f;
+    particles.resize(500000);
     box3f domain;
     for (int i=0; i<particles.size(); ++i) {
         float x=pos(rd);
@@ -205,12 +205,9 @@ namespace dvr {
     owlGeomSet1f(geom, "radius", radius);
 
 
-    // Rebuild (also restructure.. TODO)
-    {
-        owlGroupBuildAccel(blasGroup);
-        owlGroupBuildAccel(tlasGroup);
-        owlBuildSBT(owl);
-    }
+    owlGroupBuildAccel(blasGroup);
+    owlGroupBuildAccel(tlasGroup);
+    owlBuildSBT(owl);
   }
 
   void Renderer::set_dt(float dt)
@@ -249,6 +246,11 @@ namespace dvr {
     owlParamsSet1i(lp,"render.spp",max(spp,1));
     owlParamsSet1i(lp,"render.heatMapEnabled",heatMapEnabled);
     owlParamsSet1f(lp,"render.heatMapScale",heatMapScale);
+
+    // owlGroupBuildAccel(blasGroup);
+    // owlGroupBuildAccel(tlasGroup);
+    // owlGroupRefitAccel(blasGroup);
+    // owlGroupRefitAccel(tlasGroup);
 
     owlLaunch2D(rayGen,fbSize.x,fbSize.y,lp);
   }
