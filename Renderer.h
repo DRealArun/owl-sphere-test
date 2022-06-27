@@ -18,6 +18,10 @@
 
 #include <vector>
 #include "deviceCode.h"
+#include <string>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
 
 namespace dvr {
 
@@ -38,7 +42,9 @@ namespace dvr {
     OWLRayGen  rayGen;
     OWLContext owl;
     OWLModule  module;
-
+    int frameId;
+    int camId;
+    
     OWLBuffer particlesBuf { 0 };
     OWLGeomType geomType { 0 };
     OWLGeom geom;
@@ -58,6 +64,8 @@ namespace dvr {
     int accumID { 0 };
 
     void resetAccum() { accumID = 0; }
+
+    cv::Mat load_image(std::string filename, int c);
     
 #ifdef DUMP_FRAMES
     // to allow dumping rgba and depth for some unrelated compositing work....

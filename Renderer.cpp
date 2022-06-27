@@ -15,11 +15,18 @@
 // ======================================================================== //
 
 #include <fstream>
-#include "mesh.h"
+// #include "mesh.h"
 #include "Renderer.h"
 #include "deviceCode.h"
 #include <owl/owl.h>
+#include <iomanip>
+#include <string>
 #include <random>
+#include "projection_utils.h"
+#include <unistd.h>
+#include <stdlib.h>
+#include <unsupported/Eigen/CXX11/Tensor>
+#include "opencv2/imgproc/imgproc.hpp"
 
 extern "C" char embedded_deviceCode[];
 
@@ -28,6 +35,49 @@ namespace dvr {
   bool  Renderer::heatMapEnabled = false;
   float Renderer::heatMapScale = 1e-5f;
   int   Renderer::spp = 1;
+
+  cv::Mat Renderer::load_image(std::string imagepath, int numChannels) {
+    int readflag;
+    if (numChannels == 3) {
+      readflag = cv::IMREAD_COLOR;
+    } else if (numChannels == 1) {
+      readflag = cv::IMREAD_ANYCOLOR | cv::IMREAD_ANYDEPTH;
+    } else {
+      std::cout << "Number of channels: ", numChannels," unsupported";
+      exit (EXIT_FAILURE);
+    }
+    cv::Mat img = cv::imread(imagepath, readflag);
+    if(img.empty())
+    {
+        std::cout << "Could not read the image: " << imagepath << std::endl;
+        exit (EXIT_FAILURE);
+    }
+    // std::cout << "Data type" << cvtype2str(img.type()) << "\t" << "Dim" << img.channels();
+    // for(int row = 0; row < img.rows; ++row) {
+    //   for(int col = 0; col < img.cols; ++col) {
+    //       std::cout << (float) img.data[row*img.cols + col] << "\t";
+    //   }
+    //   std::cout << std::endl;
+    // } 
+    int down_width = 256;
+	  int down_height = 256;
+	  cv::Mat resizeImg;
+	  resize(img, resizeImg, cv::Size(down_width, down_height), CV_INTER_AREA);
+    if (numChannels != 3) {
+      std::vector<cv::Mat> channels(3);
+      cv::split(resizeImg, channels);
+      cv::Mat img1d = channels[1];
+      cv::Mat img1dGray; 
+      img1d.convertTo(img1dGray, CV_8UC1);
+      // cv::imshow("Depth", img1dGray);
+      // int k = cv::waitKey(0);
+      return img1d;
+    } else {
+      // cv::imshow("Image", resizeImg);
+      // int k = cv::waitKey(0);
+      return resizeImg;
+    }
+  }
   
   OWLVarDecl rayGenVars[]
   = {
@@ -81,31 +131,83 @@ namespace dvr {
     std::default_random_engine rd;
     std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
 
-    float radius = .001f;
-    particles.resize(500000);
+    float radius = .01f;
+    // particles.resize(500);
     box3f domain;
-    for (int i=0; i<particles.size(); ++i) {
-        float x=pos(rd);
-        float y=pos(rd);
-        float z=pos(rd);
+    // Eigen::Matrix2Xf g = generateGridCoordinates(10, 20);
+    // for (int i = 0; i < 10; ++i) {
+    //     for (int j = 0; j < 20; ++j) {
+    //         std::cout << "(" << g(0, (i*20)+j) << "," << g(1, (i*20)+j) << ") ";
+    //     }
+    //     std::cout << "\n";
+    // }
+    frameId = 1;
+    camId = 1;
+    std::ostringstream imgPath, depPath;
+    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << frameId << "_" << std::setfill('0') << std::setw(4) << camId << ".jpg";
+    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << frameId << "_" << std::setfill('0') << std::setw(4)<< camId << ".exr";
+
+    cv::Mat img = Renderer::load_image(imgPath.str(), 3);
+    cv::Mat dep = Renderer::load_image(depPath.str(), 1);
+
+    // cv::Mat img = Renderer::load_image("/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_1_0001.jpg", 3);
+    // cv::Mat dep = Renderer::load_image("/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_1_0001.exr", 1);
+
+    Eigen::Matrix4f K, offset;
+    K <<  2666.666748046875/1920.0*256, 0.0, 960.0/1920.0*256, 0.0,
+          0.0, 2666.666748046875/1080.0*256, 540.0/1080.0*256, 0.0,
+          0.0, 0.0, 1.0, 0.0,
+          0.0, 0.0, 0.0, 1.0;
+    // offset << 2, 0, -1, 0,
+    //           0, 2, -1, 0, 
+    //           0, 0, 1, 0, 
+    //           0, 0, 0, 1;
+    Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
+    // std::cout << "Camera coords size: " << pts.rows() << " " << pts.cols()  << std::endl;
+    // std::cout << "Row min and max: " << pts.row(3).minCoeff() << " " << pts.row(3).maxCoeff()  << std::endl;
+    // std::cout << "x min and max: " << pts.row(0).minCoeff() << " " << pts.row(0).maxCoeff()  << std::endl;
+    // std::cout << "y min and max: " << pts.row(1).minCoeff() << " " << pts.row(1).maxCoeff()  << std::endl;
+    // std::cout << "z min and max: " << pts.row(2).minCoeff() << " " << pts.row(2).maxCoeff()  << std::endl;
+    // Since max and min are 1 then we can ignore the 4th component
+
+    // for (int i=0; i<particles.size(); ++i) {
+    //     float x=pos(rd);
+    //     float y=pos(rd);
+    //     float z=pos(rd);
+    //     particles[i] = {x,y,z};
+    //     domain.extend(particles[i]-vec3f(radius));
+    //     domain.extend(particles[i]+vec3f(radius));
+    // }
+
+    // Particles must be between -1 and 1
+    particles.resize(pts.cols());
+    for (int i=0; i<pts.cols(); ++i) {
+        float x=pts(0, i);
+        float y=pts(1, i);
+        float z=pts(2, i);
         particles[i] = {x,y,z};
         domain.extend(particles[i]-vec3f(radius));
         domain.extend(particles[i]+vec3f(radius));
     }
 #else
-    std::ifstream in("/Users/stefan/vowl/data/atm_2019_07_01_07_00.tab.out");
-    float radius = 10000.312f;
-    uint64_t size;
-    in.read((char*)&size,sizeof(size));
-    particles.resize(size);
-    std::vector<vec4f> temp(particles.size());
-    in.read((char*)temp.data(),temp.size()*sizeof(vec4f));
-    box3f domain;
-    for (int i=0; i<particles.size(); ++i) {
-        particles[i] = vec3f(temp[i]);std::cout << particles[i] << '\n';
-        domain.extend(particles[i]-vec3f(radius));
-        domain.extend(particles[i]+vec3f(radius));
-    }
+    // write state machine here that can determine if only matrix update is needed or 
+    // image update is also needed
+    // Use arrow keys to get user input. Use this to calculate the position using step update
+    // Use this to determine if complete matrix update is needed. 
+
+    // std::ifstream in("/Users/stefan/vowl/data/atm_2019_07_01_07_00.tab.out");
+    // float radius = 10000.312f;
+    // uint64_t size;
+    // in.read((char*)&size,sizeof(size));
+    // particles.resize(size);
+    // std::vector<vec4f> temp(particles.size());
+    // in.read((char*)temp.data(),temp.size()*sizeof(vec4f));
+    // box3f domain;
+    // for (int i=0; i<particles.size(); ++i) {
+    //     particles[i] = vec3f(temp[i]);std::cout << particles[i] << '\n';
+    //     domain.extend(particles[i]-vec3f(radius));
+    //     domain.extend(particles[i]+vec3f(radius));
+    // }
 #endif
 
     std::cout << domain << '\n';
@@ -161,8 +263,14 @@ namespace dvr {
 
     geom = owlGeomCreate(owl, geomType);
 
-    blasGroup = owlUserGeomGroupCreate(owl, 1, &geom);
-    tlasGroup = owlInstanceGroupCreate(owl, 1);
+    blasGroup = owlUserGeomGroupCreate(owl, 1, &geom, OPTIX_BUILD_FLAG_ALLOW_UPDATE);
+    // tlasGroup = owlInstanceGroupCreate(owl, 1);
+    tlasGroup = owlInstanceGroupCreate(owl,1,
+                             nullptr,
+                             nullptr,
+                             nullptr,
+                             OWL_MATRIX_FORMAT_OWL,
+                             OPTIX_BUILD_FLAG_ALLOW_UPDATE);
     owlInstanceGroupSetChild(tlasGroup, 0, blasGroup);
 
     // TODO: restructure; just for testing
@@ -229,6 +337,8 @@ namespace dvr {
   void Renderer::render(const vec2i &fbSize,
                         uint32_t *fbPointer)
   {
+    unsigned int microsecond = 1000000;
+    usleep(1 * microsecond);
     if (fbSize != this->fbSize) {
 #ifdef DUMP_FRAMES
       owlBufferResize(fbDepth,fbSize.x*fbSize.y);
@@ -249,9 +359,41 @@ namespace dvr {
 
     // owlGroupBuildAccel(blasGroup);
     // owlGroupBuildAccel(tlasGroup);
-    // owlGroupRefitAccel(blasGroup);
-    // owlGroupRefitAccel(tlasGroup);
 
+    // frameId+=1;
+    camId += 1;
+
+    std::ostringstream imgPath, depPath;
+    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << frameId << "_" << std::setfill('0') << std::setw(4) << camId << ".jpg";
+    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << frameId << "_" << std::setfill('0') << std::setw(4)<< camId << ".exr";
+
+    cv::Mat img = Renderer::load_image(imgPath.str(), 3);
+    cv::Mat dep = Renderer::load_image(depPath.str(), 1);
+
+
+    Eigen::Matrix4f K, offset;
+    K <<  2666.666748046875/1920.0*256, 0.0, 960.0/1920.0*256, 0.0,
+          0.0, 2666.666748046875/1080.0*256, 540.0/1080.0*256, 0.0,
+          0.0, 0.0, 1.0, 0.0,
+          0.0, 0.0, 0.0, 1.0;
+    Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
+    float radius = .01f;
+    box3f domain;
+    particles.resize(pts.cols());
+    for (int i=0; i<pts.cols(); ++i) {
+        float x=pts(0, i);
+        float y=pts(1, i);
+        float z=pts(2, i);
+        particles[i] = {x,y,z};
+        domain.extend(particles[i]-vec3f(radius));
+        domain.extend(particles[i]+vec3f(radius));
+    }
+
+    owlBufferResize(particlesBuf, particles.size());
+    owlBufferUpload(particlesBuf, particles.data());
+    owlGroupRefitAccel(blasGroup);
+    owlGroupRefitAccel(tlasGroup);
+    // owlBuildSBT(context);
     owlLaunch2D(rayGen,fbSize.x,fbSize.y,lp);
   }
                              
