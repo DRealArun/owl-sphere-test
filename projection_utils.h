@@ -8,6 +8,8 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <Eigen/Dense>
 
+#define DOWN_SAMP_RES 256
+
 std::string cvtype2str(int type) {
   std::string r;
 
@@ -51,8 +53,10 @@ Eigen::Matrix2Xf generateGridCoordinates(int nH, int nW) {
 // M at is already flattened.
 Eigen::Matrix4Xf projectPix2Camera(cv::Mat depth, Eigen::Matrix4f K, int zNear, int zFar) { 
     // Get valid depth values and its associated indices.
+    
     Eigen::Matrix4Xf camCoords;
     camCoords.resize(4, depth.rows*depth.cols);
+
     cv::Mat img1dGray = cv::Mat(depth.rows, depth.cols, depth.type(), cvScalar(0.));
     std::cout << cvtype2str(depth.type()) << " type" << std::endl;
     double minVal; 
@@ -91,7 +95,9 @@ Eigen::Matrix4Xf projectPix2Camera(cv::Mat depth, Eigen::Matrix4f K, int zNear, 
     return Kinv*camCoords;
 }
 
-Eigen::Matrix4f projectCam2World(Eigen::Matrix4f camCoords, Eigen::Matrix4f P) {
+Eigen::Matrix4Xf projectCam2World(Eigen::Matrix4Xf camCoords, Eigen::Matrix4f P) {
+    // camCoords.resize(4, DOWN_SAMP_RES*DOWN_SAMP_RES);
+    // Eigen::Matrix<float, 4, DOWN_SAMP_RES*DOWN_SAMP_RES> coords = camCoords;
     return P*camCoords;
 }
 

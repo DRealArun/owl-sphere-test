@@ -22,6 +22,11 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
+#include <nlohmann/json.hpp>
+#include <unsupported/Eigen/CXX11/Tensor>
+#include <Eigen/Dense>
+
+using json = nlohmann::json;
 
 namespace dvr {
 
@@ -57,6 +62,7 @@ namespace dvr {
     OWLGroup modelGroup;
 
     box3f modelBounds;
+    json annoData;
 
     bool showBoxes = 0;
     std::vector<vec4f> colorMap;
@@ -64,8 +70,12 @@ namespace dvr {
     int accumID { 0 };
 
     void resetAccum() { accumID = 0; }
+    vec3f initCamLoc;
+    Eigen :: Matrix3f initCamRotMat;
+    float Camfovy;
 
     cv::Mat load_image(std::string filename, int c);
+    void get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy);
     
 #ifdef DUMP_FRAMES
     // to allow dumping rgba and depth for some unrelated compositing work....

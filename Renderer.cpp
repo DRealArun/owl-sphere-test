@@ -27,14 +27,11 @@
 #include "projection_utils.h"
 #include <unistd.h>
 #include <stdlib.h>
-#include <unsupported/Eigen/CXX11/Tensor>
 #include "opencv2/imgproc/imgproc.hpp"
 
 #include <iostream>
-#include <nlohmann/json.hpp>
 
 extern "C" char embedded_deviceCode[];
-using json = nlohmann::json;
 
 namespace dvr
 {
@@ -95,6 +92,52 @@ namespace dvr
     }
   }
 
+  void Renderer::get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy) {
+    std::array<std::array<float, 3>, 3> Int;
+    std::map<std::string, float> Ori;
+    std::map<std::string, float> Loc;
+    std::ostringstream camName;
+    camName << "camera_" << cId;
+    for (json::iterator it = annoData[camName.str()].begin(); it != annoData[camName.str()].end(); ++it)
+    {
+      if (it.key() == "K")
+      {
+        Int = it.value().get<std::array<std::array<float, 3>, 3>>();
+      }
+      if (it.key() == "orientation")
+      {
+        Ori = it.value().get<std::map<std::string, float>>();
+      }
+      if (it.key() == "location")
+      {
+        Loc = it.value().get<std::map<std::string, float>>();
+      }
+      if (it.key() == "angle_y") 
+      {
+        fovy = it.value().get<float>();
+      }
+    }
+    Eigen::Quaternionf q;
+    q.x() = Ori["x"];
+    q.y() = Ori["y"];
+    q.z() = Ori["z"];
+    q.w() = Ori["w"];
+    p = Eigen :: Matrix4f :: Identity ();
+    p.topLeftCorner(3,3) = q.normalized().toRotationMatrix();
+    p.topRightCorner(3,1) <<  Loc["x"] , Loc["y"] , Loc["z"];
+
+    Eigen::Matrix4f K, offset;
+    K << Int[0][0] / 1920.0 * 256, Int[0][1] / 1920.0 * 256, Int[0][2] / 1920.0 * 256, 0.0,
+        Int[1][0] / 1080.0 * 256, Int[1][1] / 1080.0 * 256, Int[1][2] / 1080.0 * 256, 0.0,
+        Int[2][0], Int[2][1], Int[2][2], 0.0,
+        0.0, 0.0, 0.0, 1.0;
+    offset << 2, 0, -1, 0,
+              0, 2, -1, 0,
+              0, 0, 1, 0,
+              0, 0, 0, 1;
+    k = offset*K;
+  }
+
   OWLVarDecl rayGenVars[] = {
       {nullptr /* sentinel to mark end of list */}};
 
@@ -151,68 +194,32 @@ namespace dvr
     //     }
     //     std::cout << "\n";
     // }
-    std::ifstream people_file("/home/arun/Desktop/data/Mock_scene_setup/Mock_scene_annotation.json", std::ifstream::binary);
-    json people;
-    people_file >> people;
-    std::cout << people["camera_2"];
+    std::ifstream annoFile("/home/arun/Desktop/data/Mock_scene_setup/Mock_scene_annotation.json", std::ifstream::binary);
+    annoFile >> annoData;
+    std::cout << annoData["camera_2"];
 
     frameId = 1;
     camId = 1;
     std::ostringstream imgPath, depPath;
-    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << frameId << "_" << std::setfill('0') << std::setw(4) << camId << ".jpg";
-    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << frameId << "_" << std::setfill('0') << std::setw(4) << camId << ".exr";
-
+    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
+    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
     cv::Mat img = Renderer::load_image(imgPath.str(), 3);
     cv::Mat dep = Renderer::load_image(depPath.str(), 1);
+    Eigen::Matrix4f K;
+    Eigen::Matrix4f SrcPoseMat;
+    get_cam_specs(camId, K, SrcPoseMat, Camfovy);
+    Eigen::Vector3f camLoc= SrcPoseMat.topRightCorner(3,1);
+    Camfovy = Camfovy*180.0/M_PI;
+    initCamRotMat = SrcPoseMat.topLeftCorner(3,3);
+    initCamLoc = vec3f(camLoc(0), camLoc(1), camLoc(2));
+    std::cout << "Source Pose matrix: " << SrcPoseMat << std::endl;
+    std::cout << "Intrinsic matrix: " << K << std::endl;
+    std::cout << "Initial location of camera: " << initCamLoc << std::endl;
+    std::cout << "Initial fov-y of camera: " << Camfovy << std::endl;
 
-    // cv::Mat img = Renderer::load_image("/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_1_0001.jpg", 3);
-    // cv::Mat dep = Renderer::load_image("/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_1_0001.exr", 1);
+    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0, 10), SrcPoseMat);
+    // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
 
-    Eigen::Matrix4f K, offset;
-    std::array<std::array<float, 3>, 3> Int;
-    std::map<std::string, float> Ori;
-    std::map<std::string, float> Loc;
-    for (json::iterator it = people["camera_1"].begin(); it != people["camera_1"].end(); ++it)
-    {
-      std::cout << "\n"
-                << it.key() << " : " << it.value() << "\n";
-      if (it.key() == "K")
-      {
-        Int = it.value().get<std::array<std::array<float, 3>, 3>>();
-      }
-      if (it.key() == "orientation")
-      {
-        Ori = it.value().get<std::map<std::string, float>>();
-      }
-      if (it.key() == "location")
-      {
-        Loc = it.value().get<std::map<std::string, float>>();
-      }
-    }
-    std::cout << "Location " << Loc["x"] << " : " << Loc["y"] << " : " << Loc["z"] << std::endl;
-    std::cout << "Orientation " << Ori["w"] << " : " << Ori["x"] << " : " << Ori["y"] << " : " << Ori["z"] << std::endl;
-    // This works
-    // for (auto i: Int){
-    //   for (auto j: i) {
-    //     std::cout <<  j << " ";
-    //   }
-    //   std::cout << std::endl;
-    // }
-    // K << 2666.666748046875 / 1920.0 * 256, 0.0, 960.0 / 1920.0 * 256, 0.0,
-    //     0.0, 2666.666748046875 / 1080.0 * 256, 540.0 / 1080.0 * 256, 0.0,
-    //     0.0, 0.0, 1.0, 0.0,
-    //     0.0, 0.0, 0.0, 1.0;
-
-    K << Int[0][0] / 1920.0 * 256, Int[0][1] / 1920.0 * 256, Int[0][2] / 1920.0 * 256, 0.0,
-        Int[1][0] / 1080.0 * 256, Int[1][1] / 1080.0 * 256, Int[1][2] / 1080.0 * 256, 0.0,
-        Int[2][0], Int[2][1], Int[2][2], 0.0,
-        0.0, 0.0, 0.0, 1.0;
-
-    // offset << 2, 0, -1, 0,
-    //           0, 2, -1, 0,
-    //           0, 0, 1, 0,
-    //           0, 0, 0, 1;
-    Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
     // std::cout << "Camera coords size: " << pts.rows() << " " << pts.cols()  << std::endl;
     // std::cout << "Row min and max: " << pts.row(3).minCoeff() << " " << pts.row(3).maxCoeff()  << std::endl;
     // std::cout << "x min and max: " << pts.row(0).minCoeff() << " " << pts.row(0).maxCoeff()  << std::endl;
@@ -382,6 +389,7 @@ namespace dvr
     owlParamsSet3f(lp, "camera.dir_dv", dir_dv.x, dir_dv.y, dir_dv.z);
 
     std::cout << "Camera: " << org << " : " << dir_00 << " : " << dir_du << " : " << dir_dv << std::endl;
+    frameId+=1;
   }
 
   void Renderer::render(const vec2i &fbSize,
@@ -412,23 +420,27 @@ namespace dvr
     // owlGroupBuildAccel(tlasGroup);
 
     // frameId+=1;
-    camId += 1;
+    // camId += 1;
 
     std::ostringstream imgPath, depPath;
-    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << frameId << "_" << std::setfill('0') << std::setw(4) << camId << ".jpg";
-    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << frameId << "_" << std::setfill('0') << std::setw(4) << camId << ".exr";
+    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
+    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
 
     cv::Mat img = Renderer::load_image(imgPath.str(), 3);
     cv::Mat dep = Renderer::load_image(depPath.str(), 1);
 
-    Eigen::Matrix4f K, offset;
-    K << 2666.666748046875 / 1920.0 * 256, 0.0, 960.0 / 1920.0 * 256, 0.0,
-        0.0, 2666.666748046875 / 1080.0 * 256, 540.0 / 1080.0 * 256, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0;
+    Eigen::Matrix4f K;
+    Eigen::Matrix4f SrcPoseMat;
+    float _dontCare;
+    get_cam_specs(camId, K, SrcPoseMat, _dontCare);
+    std::cout << "Source Pose matrix: " << SrcPoseMat << std::endl;
+    std::cout << "Intrinsic matrix: " << K << std::endl;
+    // Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0, 10), SrcPoseMat);
     Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
+
     float radius = .01f;
     box3f domain;
+    Renderer::resetAccum();
     particles.resize(pts.cols());
     for (int i = 0; i < pts.cols(); ++i)
     {

@@ -308,7 +308,14 @@ namespace dvr {
                                    /*lookat   */modelBounds.center(),
                                    /*up-vector*/vec3f(0.f, 1.f, 0.f),
                                    /*fovy(deg)*/70.f);
+      // Eigen::Vector3f oriCam= renderer.initCamRotMat*Eigen::Vector3f(0.f, 1.f, 0.f);
+      // viewer->setCameraOrientation(/*origin   */
+      //                              renderer.initCamLoc,
+      //                              /*lookat   */vec3f(0, 0, 0),
+      //                              /*up-vector*/vec3f(oriCam(0),oriCam(1),oriCam(2)),
+      //                              /*fovy(deg)*/renderer.Camfovy);
     }
+    std::cout << "Camera center: " << modelBounds.center() << std::endl;
     viewer->setWorldScale(1.1f*length(modelBounds.span()));
 
 
