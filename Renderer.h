@@ -51,12 +51,14 @@ namespace dvr {
     int camId;
     
     OWLBuffer particlesBuf { 0 };
+    OWLBuffer colorsBuf { 0 };
     OWLGeomType geomType { 0 };
     OWLGeom geom;
     OWLGroup blasGroup;
     OWLGroup tlasGroup;
 
     std::vector<Particle> particles;
+    std::vector<Color> colors;
 
     OWLGeomType triangleGeomType;
     OWLGroup modelGroup;
@@ -76,6 +78,7 @@ namespace dvr {
 
     cv::Mat load_image(std::string filename, int c);
     void get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy);
+    std::string get_nearest_camera(const vec3f &org);
     
 #ifdef DUMP_FRAMES
     // to allow dumping rgba and depth for some unrelated compositing work....

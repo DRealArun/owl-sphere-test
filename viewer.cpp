@@ -46,7 +46,7 @@ namespace dvr {
       vec3f vp = vec3f(0.f);
       vec3f vu = vec3f(0.f);
       vec3f vi = vec3f(0.f);
-      float fovy = 70;
+      float fovy = 50;
     } camera;
     float dt = .5f;
     vec2i windowSize  = vec2i(1024,1024);
@@ -302,21 +302,23 @@ namespace dvr {
                                    /*up-vector*/cmdline.camera.vu,
                                    /*fovy(deg)*/cmdline.camera.fovy);
     } else {
-      viewer->setCameraOrientation(/*origin   */
-                                   modelBounds.center()
-                                   + vec3f(-.3f, .7f, +1.f) * modelBounds.span(),
-                                   /*lookat   */modelBounds.center(),
-                                   /*up-vector*/vec3f(0.f, 1.f, 0.f),
-                                   /*fovy(deg)*/70.f);
-      // Eigen::Vector3f oriCam= renderer.initCamRotMat*Eigen::Vector3f(0.f, 1.f, 0.f);
       // viewer->setCameraOrientation(/*origin   */
-      //                              renderer.initCamLoc,
-      //                              /*lookat   */vec3f(0, 0, 0),
-      //                              /*up-vector*/vec3f(oriCam(0),oriCam(1),oriCam(2)),
-      //                              /*fovy(deg)*/renderer.Camfovy);
+      //                              modelBounds.center()
+      //                              + vec3f(-.3f, .7f, +1.f) * modelBounds.span(),
+      //                              /*lookat   */modelBounds.center(),
+      //                              /*up-vector*/vec3f(0.f, 1.f, 0.f),
+      //                              /*fovy(deg)*/70.f);
+      Eigen::Vector3f oriCam= renderer.initCamRotMat*Eigen::Vector3f(0.f, 1.f, 0.f);
+      Eigen::Vector3f oriCamZ= renderer.initCamRotMat*Eigen::Vector3f(0.f, 0.f, 1.f);
+      viewer->setCameraOrientation(/*origin   */
+                                    // modelBounds.center()
+                                    renderer.initCamLoc,
+                                  //  + vec3f(-0.005f, +0.f, 0.0125f) * modelBounds.span(), // -4.4
+                                   /*lookat   */vec3f(oriCamZ(0), oriCamZ(1), oriCamZ(2)), //modelBounds.center(),
+                                   /*up-vector*/vec3f(oriCam(0), oriCam(1), oriCam(2)),
+                                   /*fovy(deg)*/50.f);
     }
-    std::cout << "Camera center: " << modelBounds.center() << std::endl;
-    viewer->setWorldScale(1.1f*length(modelBounds.span()));
+    // viewer->setWorldScale(1.0f*length(modelBounds.span()));
 
 
     viewer->showAndRun();

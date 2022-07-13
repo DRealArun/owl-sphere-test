@@ -27,6 +27,7 @@
 #include "projection_utils.h"
 #include <unistd.h>
 #include <stdlib.h>
+#include <sstream>
 #include "opencv2/imgproc/imgproc.hpp"
 
 #include <iostream>
@@ -92,6 +93,27 @@ namespace dvr
     }
   }
 
+  std::string Renderer::get_nearest_camera(const vec3f &org) {
+    std::map<std::string, float> Ori;
+    std::map<std::string, float> Loc;
+    double dist = INFINITY;
+    std::string cId;
+    double norm;
+    for (json::iterator it = annoData.begin(); it != annoData.end(); ++it)
+    {
+        std::map<std::string, float> _Loc = it.value()["location"].get<std::map<std::string, float>>();
+        Eigen::Vector3d loc_vec = {_Loc["x"]-org[0], _Loc["y"]-org[1], _Loc["z"]-org[2]};
+        norm = loc_vec.squaredNorm();
+        if (norm <= dist) {
+          cId = it.key();
+          dist = norm;
+          Loc = _Loc;
+        }
+    }
+    std::cout << "Selected Camera : " << cId << " with norm of " << dist << std::endl;
+    return cId;
+  }
+
   void Renderer::get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy) {
     std::array<std::array<float, 3>, 3> Int;
     std::map<std::string, float> Ori;
@@ -127,8 +149,9 @@ namespace dvr
     p.topRightCorner(3,1) <<  Loc["x"] , Loc["y"] , Loc["z"];
 
     Eigen::Matrix4f K, offset;
-    K << Int[0][0] / 1920.0 * 256, Int[0][1] / 1920.0 * 256, Int[0][2] / 1920.0 * 256, 0.0,
-        Int[1][0] / 1080.0 * 256, Int[1][1] / 1080.0 * 256, Int[1][2] / 1080.0 * 256, 0.0,
+    int res = 1;
+    K << Int[0][0] / 1920.0 * res, Int[0][1] / 1920.0 * res, Int[0][2] / 1920.0 * res, 0.0,
+        Int[1][0] / 1080.0 * res, Int[1][1] / 1080.0 * res, Int[1][2] / 1080.0 * res, 0.0,
         Int[2][0], Int[2][1], Int[2][2], 0.0,
         0.0, 0.0, 0.0, 1.0;
     offset << 2, 0, -1, 0,
@@ -175,6 +198,7 @@ namespace dvr
       {"model.group", OWL_GROUP, OWL_OFFSETOF(LaunchParams, model.group)},
       {"model.indexBuffer", OWL_BUFPTR, OWL_OFFSETOF(LaunchParams, model.indexBuffer)},
       {"model.vertexBuffer", OWL_BUFPTR, OWL_OFFSETOF(LaunchParams, model.vertexBuffer)},
+      {"colors", OWL_BUFPTR, OWL_OFFSETOF(LaunchParams, colors)},
       {nullptr /* sentinel to mark end of list */}};
 
   Renderer::Renderer()
@@ -184,16 +208,8 @@ namespace dvr
     std::default_random_engine rd;
     std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
 
-    float radius = .01f;
-    // particles.resize(500);
+    float radius = 0.01f;
     box3f domain;
-    // Eigen::Matrix2Xf g = generateGridCoordinates(10, 20);
-    // for (int i = 0; i < 10; ++i) {
-    //     for (int j = 0; j < 20; ++j) {
-    //         std::cout << "(" << g(0, (i*20)+j) << "," << g(1, (i*20)+j) << ") ";
-    //     }
-    //     std::cout << "\n";
-    // }
     std::ifstream annoFile("/home/arun/Desktop/data/Mock_scene_setup/Mock_scene_annotation.json", std::ifstream::binary);
     annoFile >> annoData;
     std::cout << annoData["camera_2"];
@@ -216,37 +232,49 @@ namespace dvr
     std::cout << "Intrinsic matrix: " << K << std::endl;
     std::cout << "Initial location of camera: " << initCamLoc << std::endl;
     std::cout << "Initial fov-y of camera: " << Camfovy << std::endl;
+    Eigen::MatrixXi mask;
 
-    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0, 10), SrcPoseMat);
-    // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
+    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0.01, 10, mask), SrcPoseMat);
+    // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0.01, 10);
+    // Eigen::Matrix4Xf pts = projectPix2Camera2(dep, K, 5, 10);
 
-    // std::cout << "Camera coords size: " << pts.rows() << " " << pts.cols()  << std::endl;
-    // std::cout << "Row min and max: " << pts.row(3).minCoeff() << " " << pts.row(3).maxCoeff()  << std::endl;
-    // std::cout << "x min and max: " << pts.row(0).minCoeff() << " " << pts.row(0).maxCoeff()  << std::endl;
-    // std::cout << "y min and max: " << pts.row(1).minCoeff() << " " << pts.row(1).maxCoeff()  << std::endl;
-    // std::cout << "z min and max: " << pts.row(2).minCoeff() << " " << pts.row(2).maxCoeff()  << std::endl;
-    // Since max and min are 1 then we can ignore the 4th component
-
-    // for (int i=0; i<particles.size(); ++i) {
-    //     float x=pos(rd);
-    //     float y=pos(rd);
-    //     float z=pos(rd);
-    //     particles[i] = {x,y,z};
-    //     domain.extend(particles[i]-vec3f(radius));
-    //     domain.extend(particles[i]+vec3f(radius));
-    // }
-
-    // Particles must be between -1 and 1
     particles.resize(pts.cols());
+    colors.resize(pts.cols());
+    float maxx = -INFINITY;
+    float maxy = -INFINITY;
+    float maxz = -INFINITY;
+    float minx = INFINITY;
+    float miny = INFINITY;
+    float minz = INFINITY;
+    int im_row, im_col, temp;
+    int chns = img.channels();
+    const int nCols = img.cols;
+    uint8_t* pixPtr = (uint8_t*)img.data;
     for (int i = 0; i < pts.cols(); ++i)
     {
+      im_col = i % dep.cols;
+      im_row = i / dep.cols;
       float x = pts(0, i);
       float y = pts(1, i);
       float z = pts(2, i);
       particles[i] = {x, y, z};
-      domain.extend(particles[i] - vec3f(radius));
-      domain.extend(particles[i] + vec3f(radius));
+      temp = (im_row*nCols*chns) + im_col*chns;
+      colors[i] = {(float) pixPtr[temp + 2], (float) pixPtr[temp + 1], (float) pixPtr[temp + 0]};
+      colors[i] /= 255.0;
+      if (x < minx) minx = x;
+      if (y < miny) miny = y;
+      if (z < minz) minz = z;
+      if (x > maxx) maxx = x;
+      if (y > maxy) maxy = y;
+      if (z > maxz) maxz = z;
+      if (mask(0, i) == 1) {
+        domain.extend(particles[i] - vec3f(radius));
+        domain.extend(particles[i] + vec3f(radius));
+      }
     }
+    // std::cout << "x range is " << minx << " : " << maxx << std::endl;
+    // std::cout << "y range is " << miny << " : " << maxy << std::endl;
+    // std::cout << "z range is " << minz << " : " << maxz << std::endl;
 #else
     // write state machine here that can determine if only matrix update is needed or
     // image update is also needed
@@ -297,6 +325,9 @@ namespace dvr
     particlesBuf = owlDeviceBufferCreate(owl,
                                          OWL_USER_TYPE(Particle),
                                          0, nullptr);
+    colorsBuf = owlDeviceBufferCreate(owl,
+                                      OWL_USER_TYPE(Color),
+                                      0, nullptr);
 
     OWLVarDecl particleGeomVars[] = {
         {"world", OWL_GROUP, OWL_OFFSETOF(ParticleGeom, world)},
@@ -334,8 +365,12 @@ namespace dvr
     owlBufferResize(particlesBuf, particles.size());
     owlBufferUpload(particlesBuf, particles.data());
 
+    owlBufferResize(colorsBuf, colors.size());
+    owlBufferUpload(colorsBuf, colors.data());
+
     owlParamsSetGroup(lp, "world", tlasGroup);
     owlParamsSetBuffer(lp, "particles", particlesBuf);
+    owlParamsSetBuffer(lp, "colors", colorsBuf);
 
     owlGeomSetGroup(geom, "world", tlasGroup);
     owlGeomSetBuffer(geom, "particles", particlesBuf);
@@ -388,15 +423,21 @@ namespace dvr
     owlParamsSet3f(lp, "camera.dir_du", dir_du.x, dir_du.y, dir_du.z);
     owlParamsSet3f(lp, "camera.dir_dv", dir_dv.x, dir_dv.y, dir_dv.z);
 
-    std::cout << "Camera: " << org << " : " << dir_00 << " : " << dir_du << " : " << dir_dv << std::endl;
-    frameId+=1;
+    std::stringstream cameraName(get_nearest_camera(org));
+    std::string seg;
+    std::vector<std::string> substringlist;
+    while(std::getline(cameraName, seg, '_'))
+    {
+      substringlist.push_back(seg);
+    }
+    camId = std::stoi(substringlist[1]);
   }
 
   void Renderer::render(const vec2i &fbSize,
                         uint32_t *fbPointer)
   {
-    unsigned int microsecond = 1000000;
-    usleep(1 * microsecond);
+    // unsigned int microsecond = 1000000;
+    // usleep(1 * microsecond);
     if (fbSize != this->fbSize)
     {
 #ifdef DUMP_FRAMES
@@ -419,8 +460,7 @@ namespace dvr
     // owlGroupBuildAccel(blasGroup);
     // owlGroupBuildAccel(tlasGroup);
 
-    // frameId+=1;
-    // camId += 1;
+    frameId+=1;
 
     std::ostringstream imgPath, depPath;
     imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
@@ -431,34 +471,57 @@ namespace dvr
 
     Eigen::Matrix4f K;
     Eigen::Matrix4f SrcPoseMat;
-    float _dontCare;
-    get_cam_specs(camId, K, SrcPoseMat, _dontCare);
-    std::cout << "Source Pose matrix: " << SrcPoseMat << std::endl;
-    std::cout << "Intrinsic matrix: " << K << std::endl;
-    // Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0, 10), SrcPoseMat);
-    Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0, 10);
+    get_cam_specs(camId, K, SrcPoseMat, Camfovy);
+    Camfovy = Camfovy*180.0/M_PI;
+    initCamRotMat = SrcPoseMat.topLeftCorner(3,3);
+    Eigen::Vector3f camLoc= SrcPoseMat.topRightCorner(3,1);
+    initCamLoc = vec3f(camLoc(0), camLoc(1), camLoc(2));
+    // std::cout << "Source Pose matrix: " << SrcPoseMat.inverse() << std::endl;
+    // std::cout << "Intrinsic matrix: " << K << std::endl;
+    Eigen::MatrixXi mask;
+    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0.01, 10, mask), SrcPoseMat);
+    // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0.01, 10);
+    // Eigen::Matrix4Xf pts = projectPix2Camera2(dep, K, 5, 10);
+    // std::cout << "points after projection" << pts.transpose() << std::endl;
 
-    float radius = .01f;
+    float radius = 0.01f;
     box3f domain;
     Renderer::resetAccum();
     particles.resize(pts.cols());
+    colors.resize(pts.cols());
+    int im_row, im_col, temp;
+    int chns = img.channels();
+    const int nCols = img.cols;
+    uint8_t* pixPtr = (uint8_t*)img.data;
     for (int i = 0; i < pts.cols(); ++i)
     {
+      im_col = i % dep.cols;
+      im_row = i / dep.cols;
       float x = pts(0, i);
       float y = pts(1, i);
       float z = pts(2, i);
       particles[i] = {x, y, z};
-      domain.extend(particles[i] - vec3f(radius));
-      domain.extend(particles[i] + vec3f(radius));
+      temp = (im_row*nCols*chns) + im_col*chns;
+      colors[i] = {(float) pixPtr[temp + 2], (float) pixPtr[temp + 1], (float) pixPtr[temp + 0]};
+      colors[i] /= 255.0;
+      if (mask(0, i) == 1) {
+        domain.extend(particles[i] - vec3f(radius));
+        domain.extend(particles[i] + vec3f(radius));
+      }
     }
 
     owlBufferResize(particlesBuf, particles.size());
     owlBufferUpload(particlesBuf, particles.data());
-    // owlGroupRefitAccel(blasGroup);
-    // owlGroupRefitAccel(tlasGroup);
-    owlGroupBuildAccel(blasGroup);
-    owlGroupBuildAccel(tlasGroup);
-    owlBuildSBT(owl);
+
+    owlBufferResize(colorsBuf, colors.size());
+    owlBufferUpload(colorsBuf, colors.data());
+
+
+    owlGroupRefitAccel(blasGroup);
+    owlGroupRefitAccel(tlasGroup);
+    // owlGroupBuildAccel(blasGroup);
+    // owlGroupBuildAccel(tlasGroup);
+    // owlBuildSBT(owl);
     owlLaunch2D(rayGen, fbSize.x, fbSize.y, lp);
   }
 

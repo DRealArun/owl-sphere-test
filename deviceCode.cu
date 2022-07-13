@@ -203,7 +203,8 @@ namespace dvr
             if (prd.primID >= 0) {
                 vec3f baseColor(0.f,0.f,.8f);
                 vec3f isectPos = ray.origin + prd.tHit*ray.direction;
-                vec3f N = (isectPos - lp.particles[prd.primID]) / lp.radius;
+                // vec3f N = (isectPos - lp.particles[prd.primID]) / lp.radius;
+                vec3f N = lp.colors[prd.primID];
                 color = vec4f(N,1.f);
             }
             color = over(color,bgColor);

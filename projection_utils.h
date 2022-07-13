@@ -10,6 +10,8 @@
 
 #define DOWN_SAMP_RES 256
 
+// Obtained from
+// https://stackoverflow.com/questions/10167534/how-to-find-out-what-type-of-a-mat-object-is-with-mattype-in-opencv
 std::string cvtype2str(int type) {
   std::string r;
 
@@ -47,61 +49,73 @@ Eigen::Matrix2Xf generateGridCoordinates(int nH, int nW) {
     return G;
 }
 
-// xs = np.linspace(0, cols - 1, cols) / float(cols - 1) * 2 - 1
-// ys = np.linspace(0, rows - 1, rows) / float(rows - 1) * 2 - 1
-
-// M at is already flattened.
-Eigen::Matrix4Xf projectPix2Camera(cv::Mat depth, Eigen::Matrix4f K, int zNear, int zFar) { 
-    // Get valid depth values and its associated indices.
-    
+Eigen::Matrix4Xf projectPix2Camera(cv::Mat depth, Eigen::Matrix4f K, int zNear, int zFar, Eigen::MatrixXi &Mask) {
     Eigen::Matrix4Xf camCoords;
     camCoords.resize(4, depth.rows*depth.cols);
+    Mask.resize(1, depth.rows*depth.cols);
 
     cv::Mat img1dGray = cv::Mat(depth.rows, depth.cols, depth.type(), cvScalar(0.));
-    std::cout << cvtype2str(depth.type()) << " type" << std::endl;
-    double minVal; 
-    double maxVal;
-    cv::minMaxLoc(depth, &minVal, &maxVal);
-    std::cout << "Max:Min " << maxVal << ":" << minVal << std::endl;
+    // std::cout << cvtype2str(depth.type()) << " type" << std::endl;
     for(int row = 0; row < depth.rows; ++row) {
         for(int col = 0; col < depth.cols; ++col) {
             float& pix = depth.ptr<float>(row)[col];
             float modpix;
             if ((pix >= zNear) && (pix <= zFar)) {
                 modpix = pix;
+                Mask(0, (row*depth.cols)+col) = 1;
             }
             if (pix > zFar) {
-                modpix = zFar;
+                modpix = -20;
+                Mask(0, (row*depth.cols)+col) = 0;
             }
             if (pix < zNear) {
-                modpix = zNear;
+                modpix = -20;
+                Mask(0, (row*depth.cols)+col) = 0;
             }
-            // float normPix = (modpix  * 2 / zFar) - 1;
-            // float normCol = (col  * 2 / depth.cols) - 1;
-            // float normRow = (row  * 2 / depth.rows) - 1;
-            camCoords(0, (row*depth.cols)+col) = modpix*col;
-            camCoords(1, (row*depth.cols)+col) = -1*modpix*row;
+            pix = modpix;
+            float normCol = (col  * 2.0 / depth.cols) - 1;
+            float normRow = (row  * 2.0 / depth.rows) - 1;
+            camCoords(0, (row*depth.cols)+col) = modpix*normCol;
+            camCoords(1, (row*depth.cols)+col) = -1*modpix*normRow;
             camCoords(2, (row*depth.cols)+col) = -1*modpix;
             camCoords(3, (row*depth.cols)+col) = 1;
         }
     }
-    // for (auto id: validIds) {
-    //      img1dGray.ptr<float>(id[0])[id[1]] = 255;
-    // }
-    // img1dGray.convertTo(img1dGray, CV_8UC1);float, 4> 
-    // cv::imshow("Depth 2", img1dGray);
-    // std::cout << camCoords << std::endl;
     Eigen::Matrix4f Kinv = K.inverse();
     return Kinv*camCoords;
 }
 
+Eigen::Matrix4Xf projectPix2Camera2(cv::Mat depth, Eigen::Matrix4f K, float zNear, float zFar) {
+    Eigen::Matrix4Xf camCoords;
+    camCoords.resize(4, 8);
+    std::vector<float> depths= {zNear, zFar};
+    std::vector<int> rows= {0, depth.rows};
+    std::vector<int> cols= {0, depth.cols};
+    int count = 0;
+    for (float pix : depths) {
+        for(int row : rows) {
+            for(int col : cols) {
+                float normCol = (col  * 2.0 / depth.cols) - 1;
+                float normRow = (row  * 2.0 / depth.rows) - 1;
+                camCoords(0, count) = pix*normCol;
+                camCoords(1, count) = -1*pix*normRow;
+                camCoords(2, count) = -1*pix;
+                camCoords(3, count) = 1;
+                count += 1;
+            }
+        }
+    }
+    std::cout << "cam coords: \n" << camCoords.transpose() << std::endl;
+    Eigen::Matrix4f Kinv = K.inverse();
+    std::cout << "inverse of K " <<  Kinv << std::endl;
+    return Kinv*camCoords;
+}
+
 Eigen::Matrix4Xf projectCam2World(Eigen::Matrix4Xf camCoords, Eigen::Matrix4f P) {
-    // camCoords.resize(4, DOWN_SAMP_RES*DOWN_SAMP_RES);
-    // Eigen::Matrix<float, 4, DOWN_SAMP_RES*DOWN_SAMP_RES> coords = camCoords;
     return P*camCoords;
 }
 
-Eigen::Matrix4f projectWorld2Cam(Eigen::Matrix4f wrldCoords, Eigen::Matrix4f P) {
+Eigen::Matrix4Xf projectWorld2Cam(Eigen::Matrix4Xf wrldCoords, Eigen::Matrix4f P) {
     Eigen::Matrix4f Pinv = P.inverse();
     return Pinv*wrldCoords;
 }
@@ -112,23 +126,3 @@ Eigen::Matrix2Xf projectCam2Pix(Eigen::Matrix4f camCoords, Eigen::Matrix4f K) {
     return temp.topRows(2);
     // While using the output of this function kindly transpose
 }
-
-// def get_warped_image(src_img, points, mask):
-//     rows, cols, _ = src_img.shape
-//     warped_img = np.ones_like(src_img)*255
-//     xs = np.linspace(0, cols - 1, cols).astype(np.int32)
-//     ys = np.linspace(0, rows - 1, rows).astype(np.int32)
-//     c, r = np.meshgrid(xs, ys, sparse=False)
-//     r = r.flatten()[mask]
-//     c = c.flatten()[mask]
-//     for count, (i, j) in enumerate(zip(r, c)):
-//         pt = [points[count, 0]*cols, points[count, 1]*rows]
-//         if pt[0] >= cols or pt[0] < 0 or pt[1] >= rows or pt[1] < 0:
-//             continue
-//         else:
-//             warped_img[int(pt[1]), cols-1-int(pt[0]), :] = src_img[i,j,:]
-//     return warped_img
-
-// cv::Mat warpImage(cv::Mat img, Eigen::Matrix2Xf pts) {
-
-// } 
