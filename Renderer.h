@@ -25,6 +25,9 @@
 #include <nlohmann/json.hpp>
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <Eigen/Dense>
+#include <opencv2/opencv.hpp>
+#include <opencv2/dnn.hpp>
+#include <opencv2/dnn/all_layers.hpp>
 
 using json = nlohmann::json;
 
@@ -32,6 +35,7 @@ namespace dvr {
 
   struct Renderer {
     Renderer();
+    Renderer(bool estimateDepth, bool largeModel);
 
     void setCamera(const vec3f &org,
                    const vec3f &dir_00,
@@ -49,6 +53,10 @@ namespace dvr {
     OWLModule  module;
     int frameId;
     int camId;
+    bool inferDepth = false;
+    bool useLargeModel = false;
+    std::string largeModel = "model-f6b98070.onnx"; // MiDaS v2.1 Large
+    std::string smallModel = "model-small.onnx"; // MiDaS v2.1 Small
     
     OWLBuffer particlesBuf { 0 };
     OWLBuffer colorsBuf { 0 };
@@ -75,10 +83,13 @@ namespace dvr {
     vec3f initCamLoc;
     Eigen :: Matrix3f initCamRotMat;
     float Camfovy;
+    cv::dnn::Net net;
 
     cv::Mat load_image(std::string filename, int c);
     void get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy);
     std::string get_nearest_camera(const vec3f &org);
+    std::vector<std::string> getOutputsNames(const cv::dnn::Net& net);
+    cv::Mat estimateDepth(cv::Mat input);
     
 #ifdef DUMP_FRAMES
     // to allow dumping rgba and depth for some unrelated compositing work....

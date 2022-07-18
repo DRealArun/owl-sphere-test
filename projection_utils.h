@@ -6,6 +6,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <unsupported/Eigen/CXX11/Tensor>
+#include "opencv2/imgproc/imgproc_c.h"
 #include <Eigen/Dense>
 
 #define DOWN_SAMP_RES 256
@@ -65,11 +66,11 @@ Eigen::Matrix4Xf projectPix2Camera(cv::Mat depth, Eigen::Matrix4f K, int zNear, 
                 Mask(0, (row*depth.cols)+col) = 1;
             }
             if (pix > zFar) {
-                modpix = -20;
+                modpix = zFar;
                 Mask(0, (row*depth.cols)+col) = 0;
             }
             if (pix < zNear) {
-                modpix = -20;
+                modpix = zFar;
                 Mask(0, (row*depth.cols)+col) = 0;
             }
             pix = modpix;

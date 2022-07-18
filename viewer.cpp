@@ -197,6 +197,8 @@ namespace dvr {
   extern "C" int main(int argc, char **argv)
   {
     std::string inFileName;
+    bool useLargeModel = false;
+    bool inferDepth = false;
 
     // Viewer::initGlut(argc,argv);
     
@@ -260,6 +262,14 @@ namespace dvr {
         cmdline.subBrickID.z = std::stoi(argv[++i]);
         cmdline.subBrickSize = std::stoi(argv[++i]);
       }
+      else if (arg == "--infer-depth-s") {
+        inferDepth = true;
+        useLargeModel = false;
+      }
+      else if (arg == "--infer-depth-l") {
+        inferDepth = true;
+        useLargeModel = true;
+      }
       else
         usage("unknown cmdline arg '"+arg+"'");
     }
@@ -281,9 +291,11 @@ namespace dvr {
 //     const box3f modelBounds = model->getBounds();
 // #endif
     
-    Renderer renderer;//(model);
+    Renderer renderer(inferDepth, useLargeModel);//(model);
 
     const box3f modelBounds = renderer.modelBounds;
+    // renderer.inferDepth = inferDepth;
+    // renderer.useLargeModel = useLargeModel;
     // renderer.setShowBoxesMode(cmdline.showBoxes);
   
     Viewer *viewer = new Viewer(&renderer);

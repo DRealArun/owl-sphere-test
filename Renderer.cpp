@@ -30,6 +30,7 @@
 #include <sstream>
 #include "opencv2/imgproc/imgproc.hpp"
 
+
 #include <iostream>
 
 extern "C" char embedded_deviceCode[];
@@ -93,6 +94,50 @@ namespace dvr
     }
   }
 
+  cv::Mat Renderer::estimateDepth(cv::Mat input) {
+    cv::Mat blob;
+    if (useLargeModel) {
+      blob = cv::dnn::blobFromImage(input, 1 / 255.f, cv::Size(384, 384),
+                                    cv::Scalar(123.675, 116.28, 103.53), true, false);
+    } else {
+      blob = cv::dnn::blobFromImage(input, 1 / 255.f, cv::Size(256, 256),
+                                    cv::Scalar(123.675, 116.28, 103.53), true, false);
+    }
+    net.setInput(blob);
+    cv::Mat disp = net.forward(getOutputsNames(net)[0]);
+    const std::vector<int32_t> size = { disp.size[1], disp.size[2] };
+    disp = cv::Mat(static_cast<int32_t>(size.size()), &size[0], CV_32F, disp.ptr<float>());
+
+    cv::resize(disp, disp, input.size());
+    disp += 0.01; // prevent dividing by zero
+    cv::Mat dep = 1.0f/disp;
+
+    double min, max;
+    cv::minMaxLoc(dep, &min, &max);
+    const double range = max - min;
+    std::cout << min << " : " << max << std::endl;
+    // clip depth in range of 0 to 10
+    // cv::Mat maskMat = dep <= 10.0;
+    // cv::Mat output;
+    // dep.copyTo(output, maskMat);
+    // cv::minMaxLoc(output, &min, &max);
+    // std::cout << min << " : " << max << std::endl;
+    // dep = output;
+
+    // 1. Normalize ( 0.0 - 1.0 )
+    dep.convertTo(dep, CV_32F, 1.0 / range, -(min / range) + (5/10.0));
+    dep *= 10.0;
+    // dep += 5;
+    cv::minMaxLoc(dep, &min, &max);
+    std::cout << min << " : " << max << std::endl;
+    // 2. Scaling ( 0 - 255 )
+    // dep.convertTo(dep, CV_8U, 255.0/10.0);
+    // cv::imshow("image", input);
+    // cv::imshow("depth", dep);
+    // int k = cv::waitKey(0);
+    return dep;
+  }
+
   std::string Renderer::get_nearest_camera(const vec3f &org) {
     std::map<std::string, float> Ori;
     std::map<std::string, float> Loc;
@@ -112,6 +157,20 @@ namespace dvr
     }
     std::cout << "Selected Camera : " << cId << " with norm of " << dist << std::endl;
     return cId;
+  }
+
+  std::vector<std::string> Renderer::getOutputsNames(const cv::dnn::Net& net)
+  {
+      static std::vector<std::string> names;
+      if (names.empty()) {
+          std::vector<int32_t> out_layers = net.getUnconnectedOutLayers();
+          std::vector<std::string> layers_names = net.getLayerNames();
+          names.resize(out_layers.size());
+          for (size_t i = 0; i < out_layers.size(); ++i) {
+              names[i] = layers_names[out_layers[i] - 1];
+          }
+      }
+      return names;
   }
 
   void Renderer::get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy) {
@@ -201,10 +260,12 @@ namespace dvr
       {"colors", OWL_BUFPTR, OWL_OFFSETOF(LaunchParams, colors)},
       {nullptr /* sentinel to mark end of list */}};
 
-  Renderer::Renderer()
+  Renderer::Renderer(bool estimateDepth, bool useBigModel)
       : xfDomain({0.f, 1.f})
   {
 #if 1
+    inferDepth = estimateDepth;
+    useLargeModel = useBigModel;
     std::default_random_engine rd;
     std::uniform_real_distribution<float> pos(-1.0f, 1.0f);
 
@@ -216,11 +277,41 @@ namespace dvr
 
     frameId = 1;
     camId = 1;
+    int zNear, zFar;
     std::ostringstream imgPath, depPath;
     imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
     depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
     cv::Mat img = Renderer::load_image(imgPath.str(), 3);
-    cv::Mat dep = Renderer::load_image(depPath.str(), 1);
+    cv::Mat dep;
+    if (!inferDepth) {
+      dep = Renderer::load_image(depPath.str(), 1);
+      std::cout << "Using ground truth depth!" << std::endl;
+    } else {
+      std::cout << "Using inferred depth!" << std::endl;
+      std::string modelDir = "/home/arun/Desktop/Workspace/view_synthesis/models/";
+      std::string modelName;
+      if (useLargeModel) {
+        modelName = largeModel;
+        std::cout << "Using large MiDaS model!" << std::endl;
+        zNear = 0;
+        zFar = 10;
+      } else {
+        std::cout << "Using small MiDaS model!" << std::endl;
+        modelName = smallModel;
+        zNear = 0;
+        zFar = 15;
+      }
+      net = cv::dnn::readNet(modelDir+modelName);
+      if (net.empty())
+      {
+        std::cout << "Error in reading network!" << std::endl;
+        exit(-1);
+      }
+      net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+      net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+      dep = Renderer::estimateDepth(img);
+    }
+
     Eigen::Matrix4f K;
     Eigen::Matrix4f SrcPoseMat;
     get_cam_specs(camId, K, SrcPoseMat, Camfovy);
@@ -234,7 +325,7 @@ namespace dvr
     std::cout << "Initial fov-y of camera: " << Camfovy << std::endl;
     Eigen::MatrixXi mask;
 
-    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0.01, 10, mask), SrcPoseMat);
+    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, zNear, zFar, mask), SrcPoseMat);
     // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0.01, 10);
     // Eigen::Matrix4Xf pts = projectPix2Camera2(dep, K, 5, 10);
 
@@ -461,13 +552,23 @@ namespace dvr
     // owlGroupBuildAccel(tlasGroup);
 
     frameId+=1;
+    int zNear, zFar;
 
     std::ostringstream imgPath, depPath;
     imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
     depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
 
     cv::Mat img = Renderer::load_image(imgPath.str(), 3);
-    cv::Mat dep = Renderer::load_image(depPath.str(), 1);
+    cv::Mat dep;
+    if (!inferDepth) {
+      dep = Renderer::load_image(depPath.str(), 1);
+      zNear = 0;
+      zFar = 10;
+    } else {
+      dep = Renderer::estimateDepth(img);
+      zNear = 0;
+      zFar = 15;
+    }
 
     Eigen::Matrix4f K;
     Eigen::Matrix4f SrcPoseMat;
@@ -479,7 +580,7 @@ namespace dvr
     // std::cout << "Source Pose matrix: " << SrcPoseMat.inverse() << std::endl;
     // std::cout << "Intrinsic matrix: " << K << std::endl;
     Eigen::MatrixXi mask;
-    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, 0.01, 10, mask), SrcPoseMat);
+    Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, zNear, zFar, mask), SrcPoseMat);
     // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0.01, 10);
     // Eigen::Matrix4Xf pts = projectPix2Camera2(dep, K, 5, 10);
     // std::cout << "points after projection" << pts.transpose() << std::endl;
