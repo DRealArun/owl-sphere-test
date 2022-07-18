@@ -46,7 +46,8 @@ namespace dvr {
     /*! set delta integration step for volume ray marching; _has_ to be
      *  called at least once before rendering a frame */
     void set_dt(float dt);
-
+    std::string dataDir = "../data/";
+    std::string modelDir = "../models/";
     OWLParams  lp;
     OWLRayGen  rayGen;
     OWLContext owl;

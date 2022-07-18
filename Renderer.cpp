@@ -271,7 +271,7 @@ namespace dvr
 
     float radius = 0.01f;
     box3f domain;
-    std::ifstream annoFile("/home/arun/Desktop/data/Mock_scene_setup/Mock_scene_annotation.json", std::ifstream::binary);
+    std::ifstream annoFile(dataDir+"Mock_scene_annotation.json", std::ifstream::binary);
     annoFile >> annoData;
     std::cout << annoData["camera_2"];
 
@@ -279,8 +279,8 @@ namespace dvr
     camId = 1;
     int zNear, zFar;
     std::ostringstream imgPath, depPath;
-    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
-    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
+    imgPath << dataDir + "RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
+    depPath << dataDir + "Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
     cv::Mat img = Renderer::load_image(imgPath.str(), 3);
     cv::Mat dep;
     if (!inferDepth) {
@@ -288,7 +288,6 @@ namespace dvr
       std::cout << "Using ground truth depth!" << std::endl;
     } else {
       std::cout << "Using inferred depth!" << std::endl;
-      std::string modelDir = "/home/arun/Desktop/Workspace/view_synthesis/models/";
       std::string modelName;
       if (useLargeModel) {
         modelName = largeModel;
@@ -391,6 +390,7 @@ namespace dvr
     std::cout << particles.size() << '\n';
 
     modelBounds.extend(domain);
+    std::cout << "Model bounds : " << modelBounds << std::endl;
 
     owl = owlContextCreate(nullptr, 1);
     module = owlModuleCreate(owl, embedded_deviceCode);
@@ -555,8 +555,8 @@ namespace dvr
     int zNear, zFar;
 
     std::ostringstream imgPath, depPath;
-    imgPath << "/home/arun/Desktop/data/Mock_scene_setup/RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
-    depPath << "/home/arun/Desktop/data/Mock_scene_setup/Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
+    imgPath << dataDir + "RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
+    depPath << dataDir + "Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
 
     cv::Mat img = Renderer::load_image(imgPath.str(), 3);
     cv::Mat dep;
