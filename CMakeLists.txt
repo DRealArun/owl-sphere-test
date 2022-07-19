@@ -28,6 +28,11 @@ include_directories(${OWL_INCLUDES})
 include(embed_ptx)
 
 include_directories(${owl_dir}/samples/common)
+# SET(OpenCV_DIR /home/arun/Desktop/Workspace/installation/OpenCV-3.4.4/share/OpenCV)
+SET(OpenCV_DIR /home/arun/Desktop/Workspace/opencv_4.5/installation/OpenCV-4.5/lib/cmake/opencv4)
+find_package(OpenCV REQUIRED)
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(nlohmann_json 3.2.0 REQUIRED)
 
 embed_ptx(
   OUTPUT_TARGET
@@ -42,12 +47,12 @@ embed_ptx(
 add_executable(sphere-test
   Renderer.cpp
   viewer.cpp
-  mesh.cpp
   )
 target_link_libraries(sphere-test
   PRIVATE
   sphere-test-ptx
   owl_viewer
+  ${OpenCV_LIBS}
+  Eigen3::Eigen
+  nlohmann_json::nlohmann_json
   )
-
-

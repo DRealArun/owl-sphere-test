@@ -17,6 +17,7 @@ namespace dvr {
   };
 
   typedef vec3f Particle;
+  typedef vec3f Color;
   struct ParticleGeom
   {
     OptixTraversableHandle world;
@@ -52,6 +53,7 @@ namespace dvr {
     OptixTraversableHandle world;
     box3f domain;
     Particle* particles;
+    Color* colors;
     unsigned numParticles;
     float radius;
 #if 1

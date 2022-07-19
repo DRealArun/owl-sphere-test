@@ -18,11 +18,25 @@
 
 #include <vector>
 #include "deviceCode.h"
+#include <string>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include <nlohmann/json.hpp>
+#include <unsupported/Eigen/CXX11/Tensor>
+#include <Eigen/Dense>
+#include <opencv2/opencv.hpp>
+#include <opencv2/dnn.hpp>
+#include <opencv2/dnn/all_layers.hpp>
+#include "opencv2/imgproc/imgproc.hpp"
+
+using json = nlohmann::json;
 
 namespace dvr {
 
   struct Renderer {
     Renderer();
+    Renderer(bool estimateDepth, bool largeModel);
 
     void setCamera(const vec3f &org,
                    const vec3f &dir_00,
@@ -33,24 +47,37 @@ namespace dvr {
     /*! set delta integration step for volume ray marching; _has_ to be
      *  called at least once before rendering a frame */
     void set_dt(float dt);
-
+    std::string dataDir = "../data/";
+    std::string modelDir = "../models/";
     OWLParams  lp;
     OWLRayGen  rayGen;
     OWLContext owl;
     OWLModule  module;
-
+    int frameId;
+    int camId;
+    int downWidth = 256;
+    int downHeight = 256;
+    float depthScalingFactor = 10.0;
+    bool inferDepth = false;
+    bool useLargeModel = false;
+    std::string largeModel = "model-f6b98070.onnx"; // MiDaS v2.1 Large
+    std::string smallModel = "model-small.onnx"; // MiDaS v2.1 Small
+    
     OWLBuffer particlesBuf { 0 };
+    OWLBuffer colorsBuf { 0 };
     OWLGeomType geomType { 0 };
     OWLGeom geom;
     OWLGroup blasGroup;
     OWLGroup tlasGroup;
 
     std::vector<Particle> particles;
+    std::vector<Color> colors;
 
     OWLGeomType triangleGeomType;
     OWLGroup modelGroup;
 
     box3f modelBounds;
+    json annoData;
 
     bool showBoxes = 0;
     std::vector<vec4f> colorMap;
@@ -58,6 +85,16 @@ namespace dvr {
     int accumID { 0 };
 
     void resetAccum() { accumID = 0; }
+    vec3f initCamLoc;
+    Eigen :: Matrix3f initCamRotMat;
+    float Camfovy;
+    cv::dnn::Net net;
+
+    cv::Mat loadImage(std::string filename, int c);
+    void getCamSpecs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy);
+    std::string getNearestCamera(const vec3f &org);
+    std::vector<std::string> getOutputsNames(const cv::dnn::Net& net);
+    cv::Mat estimateDepth(cv::Mat input);
     
 #ifdef DUMP_FRAMES
     // to allow dumping rgba and depth for some unrelated compositing work....
