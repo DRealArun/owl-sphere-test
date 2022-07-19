@@ -15,16 +15,8 @@
 // ======================================================================== //
 
 #include "Renderer.h"
-
 #include "owlViewer/OWLViewer.h"
-
-// #include "glutViewer/OWLViewer.h"
-// #include "owlViewer/OWLViewer.h"
-// #include <GL/glui.h>
-// #include <GL/glui/TransferFunction.h>
-// #include "owlViewer/OWLViewer.h"
 #include <fstream>
-// #include "ColorMapper.h"
 
 namespace dvr {
   using owl::viewer::SimpleCamera;
@@ -33,9 +25,6 @@ namespace dvr {
   
   struct {
     bool  showBoxes = 0;
-    // int   spp = 4;
-    // int   maxNumBounces = 3;
-    // int   shadeMode = 9;
     vec3i dims = 0;
     vec3i subBrickID   = 0;
     int   subBrickSize = 0;
@@ -168,9 +157,6 @@ namespace dvr {
     char title[1000];
     sprintf(title,"mowlana - %.2f FPS",(1.f/avg_t));
     setTitle(title);
-    // setWindowTitle(title);
-    // glfwSetWindowTitle(this->handle,title);
-
     t_last = t_now;
 
 
@@ -199,8 +185,6 @@ namespace dvr {
     std::string inFileName;
     bool useLargeModel = false;
     bool inferDepth = false;
-
-    // Viewer::initGlut(argc,argv);
     
     for (int i=1;i<argc;i++) {
       const std::string arg = argv[i];
@@ -274,34 +258,10 @@ namespace dvr {
         usage("unknown cmdline arg '"+arg+"'");
     }
     
-    // if (inFileName == "")
-    //   usage("no filename specified");
-    // if (cmdline.formatString == "")
-    //   usage("no format string specified (-f float|uchar)");
-    // if (cmdline.dims == vec3i(0))
-    //   usage("no volume dims specified (-dims x y z)");
-        
-//     Model::SP model = Model::load(inFileName,cmdline.dims,cmdline.formatString,
-//                                   cmdline.subBrickID,cmdline.subBrickSize);
-// 
-// #if DUMP_FRAMES
-    // const box3f modelBounds = box3f(vec3f(-1.5f,-1.5f,-1.5f),vec3f(1.5f,1.5f,1.5f));
-    // const box3f modelBounds = box3f(vec3f(-3,0,-2),vec3f(3.434,3.15,2));
-// #else
-//     const box3f modelBounds = model->getBounds();
-// #endif
-    
     Renderer renderer(inferDepth, useLargeModel);//(model);
 
     const box3f modelBounds = renderer.modelBounds;
-    // renderer.inferDepth = inferDepth;
-    // renderer.useLargeModel = useLargeModel;
-    // renderer.setShowBoxesMode(cmdline.showBoxes);
-  
     Viewer *viewer = new Viewer(&renderer);
-    // viewer->resize(QSize(128,128));
-    // if (cmdline.windowSize != vec2i(0))
-    //   viewer.setWindowSize(cmdline.windowSize);
 
     viewer->enableFlyMode();
     viewer->enableInspectMode(/* valid range of poi*/modelBounds,
@@ -314,12 +274,6 @@ namespace dvr {
                                    /*up-vector*/cmdline.camera.vu,
                                    /*fovy(deg)*/cmdline.camera.fovy);
     } else {
-      // viewer->setCameraOrientation(/*origin   */
-      //                              modelBounds.center()
-      //                              + vec3f(-.3f, .7f, +1.f) * modelBounds.span(),
-      //                              /*lookat   */modelBounds.center(),
-      //                              /*up-vector*/vec3f(0.f, 1.f, 0.f),
-      //                              /*fovy(deg)*/70.f);
       Eigen::Vector3f oriCam= renderer.initCamRotMat*Eigen::Vector3f(0.f, 1.f, 0.f);
       Eigen::Vector3f oriCamZ= renderer.initCamRotMat*Eigen::Vector3f(0.f, 0.f, 1.f);
       viewer->setCameraOrientation(/*origin   */
@@ -331,8 +285,6 @@ namespace dvr {
                                    /*fovy(deg)*/50.f);
     }
     // viewer->setWorldScale(1.0f*length(modelBounds.span()));
-
-
     viewer->showAndRun();
   }
   

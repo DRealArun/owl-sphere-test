@@ -28,6 +28,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
 #include <opencv2/dnn/all_layers.hpp>
+#include "opencv2/imgproc/imgproc.hpp"
 
 using json = nlohmann::json;
 
@@ -54,6 +55,9 @@ namespace dvr {
     OWLModule  module;
     int frameId;
     int camId;
+    int downWidth = 256;
+    int downHeight = 256;
+    float depthScalingFactor = 10.0;
     bool inferDepth = false;
     bool useLargeModel = false;
     std::string largeModel = "model-f6b98070.onnx"; // MiDaS v2.1 Large
@@ -86,9 +90,9 @@ namespace dvr {
     float Camfovy;
     cv::dnn::Net net;
 
-    cv::Mat load_image(std::string filename, int c);
-    void get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy);
-    std::string get_nearest_camera(const vec3f &org);
+    cv::Mat loadImage(std::string filename, int c);
+    void getCamSpecs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy);
+    std::string getNearestCamera(const vec3f &org);
     std::vector<std::string> getOutputsNames(const cv::dnn::Net& net);
     cv::Mat estimateDepth(cv::Mat input);
     

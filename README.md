@@ -1,6 +1,6 @@
 # Installation
 An Nvidia graphics card is necessary to run this software. In addition to that the following software packages will also be necessary.
-- Install Nvidia driver, Cuda and Optix 7. Please follow this blog post[blog post](https://ingowald.blog/installing-the-latest-nvidia-driver-cuda-and-optix-on-linux-ubuntu-18-04/) to install these packages.
+- Install Nvidia driver, Cuda and Optix 7. Please follow this blog post [blog post](https://ingowald.blog/installing-the-latest-nvidia-driver-cuda-and-optix-on-linux-ubuntu-18-04/) to install these packages.
 - Install OWL (A Node Graph "Wrapper" Library for OptiX 7). Please follow the Building OWL instructions provided on OWL github repository [OWL github repository](https://github.com/owl-project/owl/tree/ce012a9c575044cc7a118dffdf11f16712949869#using-owl-through-cmake)
 - Eigen3 3.3
 ```
@@ -42,10 +42,13 @@ make
 ```
 
 # Running the application
-Enable openexr support at runtime run the following command in the terminal,
+- Update the ``OpenCV_DIR`` in the ``CMakeLists.txt`` to point to your OpenCV installation (Folder that contains the ``OpenCVConfig.cmake`` and other ``.cmake`` files).
+
+- Enable openexr support at runtime by running the following command in the terminal,
 ```
 export OPENCV_IO_ENABLE_OPENEXR=1 # This sets the enviroment variable used by opencv
 ```
+
 - To run the application on simulation blender data using groundtruth depth maps, run the following command.
 
 ```

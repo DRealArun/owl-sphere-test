@@ -1,3 +1,6 @@
+// Author: Arun Rajendra Prabhu (arun.prabhu@h-brs.de)
+// IVC HBRS
+
 #include <Eigen/Core>
 #include <iostream>
 #include <vector>
@@ -8,8 +11,6 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 #include "opencv2/imgproc/imgproc_c.h"
 #include <Eigen/Dense>
-
-#define DOWN_SAMP_RES 256
 
 // Obtained from
 // https://stackoverflow.com/questions/10167534/how-to-find-out-what-type-of-a-mat-object-is-with-mattype-in-opencv
@@ -87,6 +88,7 @@ Eigen::Matrix4Xf projectPix2Camera(cv::Mat depth, Eigen::Matrix4f K, int zNear, 
 }
 
 Eigen::Matrix4Xf projectPix2Camera2(cv::Mat depth, Eigen::Matrix4f K, float zNear, float zFar) {
+    // function for debugging only
     Eigen::Matrix4Xf camCoords;
     camCoords.resize(4, 8);
     std::vector<float> depths= {zNear, zFar};

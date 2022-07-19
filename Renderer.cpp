@@ -15,12 +15,10 @@
 // ======================================================================== //
 
 #include <fstream>
-// #include "mesh.h"
 #include "Renderer.h"
 #include "deviceCode.h"
 #include <owl/owl.h>
 #include <iomanip>
-#include <string>
 #include <array>
 #include <map>
 #include <random>
@@ -28,9 +26,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sstream>
-#include "opencv2/imgproc/imgproc.hpp"
-
-
 #include <iostream>
 
 extern "C" char embedded_deviceCode[];
@@ -42,7 +37,7 @@ namespace dvr
   float Renderer::heatMapScale = 1e-5f;
   int Renderer::spp = 1;
 
-  cv::Mat Renderer::load_image(std::string imagepath, int numChannels)
+  cv::Mat Renderer::loadImage(std::string imagepath, int numChannels)
   {
     int readflag;
     if (numChannels == 3)
@@ -55,7 +50,7 @@ namespace dvr
     }
     else
     {
-      std::cout << "Number of channels: ", numChannels, " unsupported";
+      std::cout << "Number of channels: " << numChannels << " unsupported" << std::endl;
       exit(EXIT_FAILURE);
     }
     cv::Mat img = cv::imread(imagepath, readflag);
@@ -64,17 +59,8 @@ namespace dvr
       std::cout << "Could not read the image: " << imagepath << std::endl;
       exit(EXIT_FAILURE);
     }
-    // std::cout << "Data type" << cvtype2str(img.type()) << "\t" << "Dim" << img.channels();
-    // for(int row = 0; row < img.rows; ++row) {
-    //   for(int col = 0; col < img.cols; ++col) {
-    //       std::cout << (float) img.data[row*img.cols + col] << "\t";
-    //   }
-    //   std::cout << std::endl;
-    // }
-    int down_width = 256;
-    int down_height = 256;
     cv::Mat resizeImg;
-    resize(img, resizeImg, cv::Size(down_width, down_height), CV_INTER_AREA);
+    resize(img, resizeImg, cv::Size(downWidth, downHeight), CV_INTER_AREA);
     if (numChannels != 3)
     {
       std::vector<cv::Mat> channels(3);
@@ -115,30 +101,17 @@ namespace dvr
     double min, max;
     cv::minMaxLoc(dep, &min, &max);
     const double range = max - min;
-    std::cout << min << " : " << max << std::endl;
-    // clip depth in range of 0 to 10
-    // cv::Mat maskMat = dep <= 10.0;
-    // cv::Mat output;
-    // dep.copyTo(output, maskMat);
-    // cv::minMaxLoc(output, &min, &max);
-    // std::cout << min << " : " << max << std::endl;
-    // dep = output;
-
-    // 1. Normalize ( 0.0 - 1.0 )
-    dep.convertTo(dep, CV_32F, 1.0 / range, -(min / range) + (5/10.0));
-    dep *= 10.0;
-    // dep += 5;
+    std::cout << "Depth Range before: " << min << " : " << max << std::endl;
+    // Transforms depth to the range ( 5 to 15 )
+    float depthOffset = (5/depthScalingFactor);
+    dep.convertTo(dep, CV_32F, 1.0 / range, -(min / range) + depthOffset);
+    dep *= depthScalingFactor;
     cv::minMaxLoc(dep, &min, &max);
-    std::cout << min << " : " << max << std::endl;
-    // 2. Scaling ( 0 - 255 )
-    // dep.convertTo(dep, CV_8U, 255.0/10.0);
-    // cv::imshow("image", input);
-    // cv::imshow("depth", dep);
-    // int k = cv::waitKey(0);
+    std::cout << "Depth Range after: " << min << " : " << max << std::endl;
     return dep;
   }
 
-  std::string Renderer::get_nearest_camera(const vec3f &org) {
+  std::string Renderer::getNearestCamera(const vec3f &org) {
     std::map<std::string, float> Ori;
     std::map<std::string, float> Loc;
     double dist = INFINITY;
@@ -159,6 +132,8 @@ namespace dvr
     return cId;
   }
 
+  // Function taken from
+  // https://github.com/niconielsen32/ComputerVision/blob/master/MonocularDepth/depthEstimationMono.cpp
   std::vector<std::string> Renderer::getOutputsNames(const cv::dnn::Net& net)
   {
       static std::vector<std::string> names;
@@ -173,7 +148,7 @@ namespace dvr
       return names;
   }
 
-  void Renderer::get_cam_specs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy) {
+  void Renderer::getCamSpecs(int cId, Eigen::Matrix4f& k, Eigen::Matrix4f& p, float& fovy) {
     std::array<std::array<float, 3>, 3> Int;
     std::map<std::string, float> Ori;
     std::map<std::string, float> Loc;
@@ -263,7 +238,6 @@ namespace dvr
   Renderer::Renderer(bool estimateDepth, bool useBigModel)
       : xfDomain({0.f, 1.f})
   {
-#if 1
     inferDepth = estimateDepth;
     useLargeModel = useBigModel;
     std::default_random_engine rd;
@@ -273,7 +247,6 @@ namespace dvr
     box3f domain;
     std::ifstream annoFile(dataDir+"Mock_scene_annotation.json", std::ifstream::binary);
     annoFile >> annoData;
-    std::cout << annoData["camera_2"];
 
     frameId = 1;
     camId = 1;
@@ -281,10 +254,10 @@ namespace dvr
     std::ostringstream imgPath, depPath;
     imgPath << dataDir + "RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
     depPath << dataDir + "Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
-    cv::Mat img = Renderer::load_image(imgPath.str(), 3);
+    cv::Mat img = Renderer::loadImage(imgPath.str(), 3);
     cv::Mat dep;
     if (!inferDepth) {
-      dep = Renderer::load_image(depPath.str(), 1);
+      dep = Renderer::loadImage(depPath.str(), 1);
       std::cout << "Using ground truth depth!" << std::endl;
     } else {
       std::cout << "Using inferred depth!" << std::endl;
@@ -313,7 +286,7 @@ namespace dvr
 
     Eigen::Matrix4f K;
     Eigen::Matrix4f SrcPoseMat;
-    get_cam_specs(camId, K, SrcPoseMat, Camfovy);
+    getCamSpecs(camId, K, SrcPoseMat, Camfovy);
     Eigen::Vector3f camLoc= SrcPoseMat.topRightCorner(3,1);
     Camfovy = Camfovy*180.0/M_PI;
     initCamRotMat = SrcPoseMat.topLeftCorner(3,3);
@@ -325,17 +298,9 @@ namespace dvr
     Eigen::MatrixXi mask;
 
     Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, zNear, zFar, mask), SrcPoseMat);
-    // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0.01, 10);
-    // Eigen::Matrix4Xf pts = projectPix2Camera2(dep, K, 5, 10);
 
     particles.resize(pts.cols());
     colors.resize(pts.cols());
-    float maxx = -INFINITY;
-    float maxy = -INFINITY;
-    float maxz = -INFINITY;
-    float minx = INFINITY;
-    float miny = INFINITY;
-    float minz = INFINITY;
     int im_row, im_col, temp;
     int chns = img.channels();
     const int nCols = img.cols;
@@ -351,43 +316,13 @@ namespace dvr
       temp = (im_row*nCols*chns) + im_col*chns;
       colors[i] = {(float) pixPtr[temp + 2], (float) pixPtr[temp + 1], (float) pixPtr[temp + 0]};
       colors[i] /= 255.0;
-      if (x < minx) minx = x;
-      if (y < miny) miny = y;
-      if (z < minz) minz = z;
-      if (x > maxx) maxx = x;
-      if (y > maxy) maxy = y;
-      if (z > maxz) maxz = z;
       if (mask(0, i) == 1) {
         domain.extend(particles[i] - vec3f(radius));
         domain.extend(particles[i] + vec3f(radius));
       }
     }
-    // std::cout << "x range is " << minx << " : " << maxx << std::endl;
-    // std::cout << "y range is " << miny << " : " << maxy << std::endl;
-    // std::cout << "z range is " << minz << " : " << maxz << std::endl;
-#else
-    // write state machine here that can determine if only matrix update is needed or
-    // image update is also needed
-    // Use arrow keys to get user input. Use this to calculate the position using step update
-    // Use this to determine if complete matrix update is needed.
-
-    // std::ifstream in("/Users/stefan/vowl/data/atm_2019_07_01_07_00.tab.out");
-    // float radius = 10000.312f;
-    // uint64_t size;
-    // in.read((char*)&size,sizeof(size));
-    // particles.resize(size);
-    // std::vector<vec4f> temp(particles.size());
-    // in.read((char*)temp.data(),temp.size()*sizeof(vec4f));
-    // box3f domain;
-    // for (int i=0; i<particles.size(); ++i) {
-    //     particles[i] = vec3f(temp[i]);std::cout << particles[i] << '\n';
-    //     domain.extend(particles[i]-vec3f(radius));
-    //     domain.extend(particles[i]+vec3f(radius));
-    // }
-#endif
-
-    std::cout << domain << '\n';
-    std::cout << particles.size() << '\n';
+    std::cout << domain << std::endl;
+    std::cout << particles.size() << std::endl;
 
     modelBounds.extend(domain);
     std::cout << "Model bounds : " << modelBounds << std::endl;
@@ -397,15 +332,6 @@ namespace dvr
     rayGen = owlRayGenCreate(owl, module, "renderFrame",
                              sizeof(RayGen), rayGenVars, -1);
     lp = owlParamsCreate(owl, sizeof(LaunchParams), launchParamsVars, -1);
-
-    // owlParamsSet3i(lp,"volume.dims",
-    //                512,
-    //                512,
-    //                512);
-    // owlParamsSet3f(lp,"render.gradientDelta",
-    //                1.f/512,
-    //                1.f/512,
-    //                1.f/512);
 
 #ifdef DUMP_FRAMES
     fbDepth = owlManagedMemoryBufferCreate(owl, OWL_FLOAT, 1, nullptr);
@@ -514,7 +440,7 @@ namespace dvr
     owlParamsSet3f(lp, "camera.dir_du", dir_du.x, dir_du.y, dir_du.z);
     owlParamsSet3f(lp, "camera.dir_dv", dir_dv.x, dir_dv.y, dir_dv.z);
 
-    std::stringstream cameraName(get_nearest_camera(org));
+    std::stringstream cameraName(getNearestCamera(org));
     std::string seg;
     std::vector<std::string> substringlist;
     while(std::getline(cameraName, seg, '_'))
@@ -527,8 +453,6 @@ namespace dvr
   void Renderer::render(const vec2i &fbSize,
                         uint32_t *fbPointer)
   {
-    // unsigned int microsecond = 1000000;
-    // usleep(1 * microsecond);
     if (fbSize != this->fbSize)
     {
 #ifdef DUMP_FRAMES
@@ -558,10 +482,10 @@ namespace dvr
     imgPath << dataDir + "RGB_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".jpg";
     depPath << dataDir + "Depth_camera_" << camId << "_" << std::setfill('0') << std::setw(4) << frameId << ".exr";
 
-    cv::Mat img = Renderer::load_image(imgPath.str(), 3);
+    cv::Mat img = Renderer::loadImage(imgPath.str(), 3);
     cv::Mat dep;
     if (!inferDepth) {
-      dep = Renderer::load_image(depPath.str(), 1);
+      dep = Renderer::loadImage(depPath.str(), 1);
       zNear = 0;
       zFar = 10;
     } else {
@@ -572,18 +496,13 @@ namespace dvr
 
     Eigen::Matrix4f K;
     Eigen::Matrix4f SrcPoseMat;
-    get_cam_specs(camId, K, SrcPoseMat, Camfovy);
+    getCamSpecs(camId, K, SrcPoseMat, Camfovy);
     Camfovy = Camfovy*180.0/M_PI;
     initCamRotMat = SrcPoseMat.topLeftCorner(3,3);
     Eigen::Vector3f camLoc= SrcPoseMat.topRightCorner(3,1);
     initCamLoc = vec3f(camLoc(0), camLoc(1), camLoc(2));
-    // std::cout << "Source Pose matrix: " << SrcPoseMat.inverse() << std::endl;
-    // std::cout << "Intrinsic matrix: " << K << std::endl;
     Eigen::MatrixXi mask;
     Eigen::Matrix4Xf pts = projectCam2World(projectPix2Camera(dep, K, zNear, zFar, mask), SrcPoseMat);
-    // Eigen::Matrix4Xf pts = projectPix2Camera(dep, K, 0.01, 10);
-    // Eigen::Matrix4Xf pts = projectPix2Camera2(dep, K, 5, 10);
-    // std::cout << "points after projection" << pts.transpose() << std::endl;
 
     float radius = 0.01f;
     box3f domain;
